@@ -16,7 +16,7 @@ export const Schedule: FC<ScheduleProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const handleGenerate = () => {
-    const result = generateSchedules(selectedClasses, dayStart, dayEnd);
+    const result = generateSchedules(selectedClasses, dayStart, dayEnd);  
     setSchedules(result);
     setCurrentIndex(0);
   };

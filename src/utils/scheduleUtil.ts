@@ -2,94 +2,120 @@
 import { Section, SelectedClass } from '../types';
 import { checkConflict, ClassSection } from './conflict';
 
+function isOnlineMeeting(mtg: { startTime: string; endTime: string }) {
+  // treat anything whose start or end indicates “ARR” or “ONLINE” as asynchronous
+  return (
+    mtg.startTime.includes('ARR') ||
+    mtg.endTime.toUpperCase() === 'ONLINE'
+  );
+}
+
 /**
  * Generate all valid schedules (one Section per SelectedClass) given user constraints.
- *
- * @param selectedClasses - array of classes the user selected (with available sections)
- * @param dayStart - earliest time classes can start ("HH:MMAM" or "HH:MMPM")
- * @param dayEnd - latest time classes can end
- * @returns nested array of Section[][], each inner array is one valid schedule combination
  */
 export function generateSchedules(
   selectedClasses: SelectedClass[],
   dayStart: string,
   dayEnd: string
 ): Section[][] {
-  const timeToMinutes = (time: string) => {
-    if (!time.includes(':')) return 0;
-    const [h, mPart] = time.split(':');
-    const m = parseInt(mPart.slice(0, 2), 10);
-    const period = mPart.slice(2).trim().toUpperCase();
-    let hours = parseInt(h, 10);
-    if (period === 'PM' && hours !== 12) hours += 12;
-    if (period === 'AM' && hours === 12) hours = 0;
-    return hours * 60 + m;
+  // helper to turn “HH:MMPM” into minutes past midnight
+  const toMins = (t: string) => {
+    if (!t.includes(':')) return 0;
+    const [h, rest] = t.split(':');
+    const m = parseInt(rest.slice(0, 2), 10);
+    let hrs = parseInt(h, 10);
+    const period = rest.slice(2).trim().toUpperCase();
+    if (period === 'PM' && hrs !== 12) hrs += 12;
+    if (period === 'AM' && hrs === 12) hrs = 0;
+    return hrs * 60 + m;
   };
+  const startWindow = toMins(dayStart);
+  const endWindow   = toMins(dayEnd);
 
-  const startWindow = timeToMinutes(dayStart);
-  const endWindow   = timeToMinutes(dayEnd);
+  // 1) Pull out any class that only has online meetings:
+  const forcedOnline: Section[] = [];
+  const toSchedule: SelectedClass[] = [];
 
-  // 1) Build options per class (filter if they've picked a specific CRN)
-  const options: Section[][] = selectedClasses.map((cls) => {
-    const pool =
-      cls.selectedCRN !== 'N/A'
-        ? cls.sections.filter(sec => sec.id === cls.selectedCRN)
-        : cls.sections;
-    if (!pool.length) {
-      console.warn(`No sections available for ${cls.code}`);
+  for (const cls of selectedClasses) {
+    // get either the user‐picked CRN or all sections
+    const pool = cls.selectedCRN !== 'N/A'
+      ? cls.sections.filter(s => s.id === cls.selectedCRN)
+      : cls.sections;
+
+    const onlineOnly = pool.every(s =>
+      s.meetings.every(isOnlineMeeting)
+    );
+
+    if (onlineOnly && pool.length) {
+      // pick the first online section (they’re all equivalent async)
+      forcedOnline.push(pool[0]);
+    } else {
+      // filter out any truly online sections — we only need to work with in‑person
+      const inPersonSecs = pool.filter(s =>
+        s.meetings.some(m => !isOnlineMeeting(m))
+      );
+      toSchedule.push({
+        ...cls,
+        sections: inPersonSecs.length ? inPersonSecs : pool
+      });
     }
-    return pool;
-  });
+  }
+
+  // 2) Build our backtracking “options” array
+  const options: Section[][] = toSchedule.map(cls => cls.sections);
 
   const results: Section[][] = [];
   const path: Section[] = [];
 
   function backtrack(idx: number) {
     if (idx === options.length) {
-      results.push([...path]);
+      // prepend any forced‑online sections to each found schedule
+      results.push([...forcedOnline, ...path]);
       return;
     }
 
     for (const sec of options[idx]) {
-      // 2) Window‐check every meeting
-      const meets = sec.meetings;
-      if (meets.some(mtg => {
-        const s = timeToMinutes(mtg.startTime);
-        const e = timeToMinutes(mtg.endTime);
+      // check each meeting of this section
+      const meets = sec.meetings.filter(m => !isOnlineMeeting(m));
+      // 2a) window‐check
+      if (meets.some(m => {
+        const s = toMins(m.startTime);
+        const e = toMins(m.endTime);
         return s < startWindow || e > endWindow;
       })) continue;
 
-      // 3) Flatten existing path into ClassSection[] for conflict checking
+      // 2b) conflict‐check
+      // flatten path into ClassSection[] for easy conflict checking
       const existing: ClassSection[] = path.flatMap(ps =>
-        ps.meetings.map(mtg => ({
-          crn: ps.id,
-          courseName: ps.code,
-          courseNumber: ps.code,
-          days: mtg.days,
-          startTime: mtg.startTime,
-          endTime: mtg.endTime,
-        }))
+        ps.meetings
+          .filter(m => !isOnlineMeeting(m))
+          .map(m => ({
+            crn: ps.id,
+            courseName: ps.code,
+            courseNumber: ps.code,
+            days: m.days,
+            startTime: m.startTime,
+            endTime: m.endTime,
+          }))
       );
 
-      // 4) Check each new meeting against existing
-      let conflict = false;
-      for (const mtg of meets) {
-        const candidate: ClassSection = {
+      let bad = false;
+      for (const m of meets) {
+        const cand: ClassSection = {
           crn: sec.id,
           courseName: sec.code,
           courseNumber: sec.code,
-          days: mtg.days,
-          startTime: mtg.startTime,
-          endTime: mtg.endTime,
+          days: m.days,
+          startTime: m.startTime,
+          endTime: m.endTime,
         };
-        if (checkConflict(candidate, existing)) {
-          conflict = true;
+        if (checkConflict(cand, existing)) {
+          bad = true;
           break;
         }
       }
-      if (conflict) continue;
+      if (bad) continue;
 
-      // 5) No conflicts, recurse
       path.push(sec);
       backtrack(idx + 1);
       path.pop();

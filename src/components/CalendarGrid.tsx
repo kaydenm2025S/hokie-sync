@@ -25,7 +25,7 @@ export const CalendarGrid: FC<CalendarGridProps> = ({ sections, dayStart, dayEnd
 
   const startMin = timeToMinutes(dayStart);
   const endMin   = timeToMinutes(dayEnd);
-  const totalHours = (endMin - startMin) / 60;
+  const totalHours  = Math.ceil((endMin - startMin) / 60);
   const hourHeight = 64; // px per hour row
   const days = ['M','T','W','R','F'];
 

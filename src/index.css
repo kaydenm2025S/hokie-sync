@@ -1,3 +1,30 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* force ‘exact’ color printing on browsers that support it */
+@media print {
+    * {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  
+    /* hide everything by default */
+    body * {
+      visibility: hidden;
+    }
+  
+    /* but show our .printable block and its children */
+    .printable,
+    .printable * {
+      visibility: visible;
+    }
+  
+    /* pin .printable to the top-left so it prints in the first page */
+    .printable {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+    }
+  }

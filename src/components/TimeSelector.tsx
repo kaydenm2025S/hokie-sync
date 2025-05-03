@@ -14,9 +14,9 @@ export const TimeSelector: FC<TimeSelectorProps> = ({
   setEndTime,
 }) => {
   const times = [
-    '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
-    '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM',
-    '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM',
+    '08:00AM', '09:00AM', '10:00AM', '11:00AM',
+    '12:00PM', '01:00PM', '02:00PM', '03:00PM',
+    '04:00PM', '05:00PM', '06:00PM', '07:00PM',
   ];
 
   return (
